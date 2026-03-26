@@ -19,6 +19,7 @@ namespace PLC_Inovance.Services
 
         void Disconnect();
 
+        bool AutoReconnect(string ip, int port = 1502, byte unitId = 1);
         event Action<bool> ConnectionChanged;
 
         // =============================

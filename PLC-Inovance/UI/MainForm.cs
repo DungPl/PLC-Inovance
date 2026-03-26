@@ -1,6 +1,7 @@
 ﻿using Microsoft.Data.Sqlite;
 using PLC_Inovance.Models;
 using PLC_Inovance.Services;
+using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace PLC_Inovance
@@ -14,8 +15,11 @@ namespace PLC_Inovance
         private IPlcServices _plc;
         private IPollingServices _polling;
         private DatabaseService _db;
-        private DatabaseService _database = new DatabaseService();
+       
         private PlcData _latestData = new PlcData();
+       
+
+       
         private bool HasDataChanged(bool[] newX, short[] newD)
         {
             lock (_latestData)
@@ -33,13 +37,16 @@ namespace PLC_Inovance
                 return false;
             }
         }
-        private void MainForm_Load(object sender, EventArgs e)
+        private async void MainForm_Load(object sender, EventArgs e)
         {
             _plc = new PLC();
             _polling = new PollingServices(_plc);
             cmbElemType.DataSource = Enum.GetValues(typeof(ElemType));
+
+
+            
             cmbElemType.SelectedIndex = 5;// Default to D
-            cbType.SelectedIndex = 0; // Default to short
+            cbType.SelectedIndex = 1; // Default to short
             _db = new DatabaseService();
             _db.Init();
             _plc.ConnectionChanged += connected =>
@@ -237,6 +244,7 @@ namespace PLC_Inovance
             }
 
             string sel = cmbElemType.SelectedItem?.ToString();
+            Debug.Write("Kieu du lieu"+sel);
             if (!Enum.TryParse<ElemType>(sel, out var type))
             {
                 rtbLog.AppendText("Invalid element type selected\n");
@@ -333,6 +341,7 @@ namespace PLC_Inovance
                     }
 
                     bool result = _plc.WriteBit(type, startAddr, value);
+                    Debug.WriteLine("Dia chi du lieuj ",startAddr);
                     rtbLog.AppendText(result ? "Ghi bit thành công\n" : "Ghi bit thất bại\n");
 
                     // Nếu ghi thành công → đọc lại X để cập nhật UI và DB
@@ -387,11 +396,7 @@ namespace PLC_Inovance
         private void btnLoadLog_Click(object sender, EventArgs e)
         {
 
-            //var logs = _database.GetAllLogs();
-
-            //dataLog.DataSource = null;
-            //dataLog.AutoGenerateColumns = true;
-            //dataLog.DataSource = logs;
+           
             try
             {
                 using var conn = new SqliteConnection("Data Source=plc.db;Cache=Shared");
