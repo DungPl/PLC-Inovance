@@ -28,9 +28,6 @@
         /// </summary>
         private void InitializeComponent()
         {
-            lblStatus = new ToolStripStatusLabel();
-            statusStrip1 = new StatusStrip();
-            toolStripStatusLabel1 = new ToolStripStatusLabel();
             rtbLog = new RichTextBox();
             backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             groupBox2 = new GroupBox();
@@ -71,7 +68,7 @@
             label1 = new Label();
             dataLog = new DataGridView();
             btnLoadLog = new Button();
-            statusStrip1.SuspendLayout();
+            lblStatus = new Label();
             groupBox2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)nudCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize)nudStartAddress).BeginInit();
@@ -79,29 +76,6 @@
             groupBox3.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dataLog).BeginInit();
             SuspendLayout();
-            // 
-            // lblStatus
-            // 
-            lblStatus.Name = "lblStatus";
-            lblStatus.Size = new Size(0, 16);
-            // 
-            // statusStrip1
-            // 
-            statusStrip1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            statusStrip1.Dock = DockStyle.None;
-            statusStrip1.ImageScalingSize = new Size(20, 20);
-            statusStrip1.Items.AddRange(new ToolStripItem[] { lblStatus, toolStripStatusLabel1 });
-            statusStrip1.Location = new Point(284, 75);
-            statusStrip1.Name = "statusStrip1";
-            statusStrip1.Size = new Size(17, 22);
-            statusStrip1.TabIndex = 32;
-            statusStrip1.Text = "statusStrip1";
-            statusStrip1.TextDirection = ToolStripTextDirection.Vertical90;
-            // 
-            // toolStripStatusLabel1
-            // 
-            toolStripStatusLabel1.Name = "toolStripStatusLabel1";
-            toolStripStatusLabel1.Size = new Size(0, 16);
             // 
             // rtbLog
             // 
@@ -239,14 +213,14 @@
             // 
             // groupBox1
             // 
-            groupBox1.Controls.Add(statusStrip1);
+            groupBox1.Controls.Add(lblStatus);
             groupBox1.Controls.Add(label2);
             groupBox1.Controls.Add(btnDisconnect);
             groupBox1.Controls.Add(btnConnect);
             groupBox1.Controls.Add(txtIP);
             groupBox1.Location = new Point(12, 0);
             groupBox1.Name = "groupBox1";
-            groupBox1.Size = new Size(345, 118);
+            groupBox1.Size = new Size(433, 118);
             groupBox1.TabIndex = 28;
             groupBox1.TabStop = false;
             groupBox1.Text = "Kết nối PLC";
@@ -533,6 +507,15 @@
             btnLoadLog.UseVisualStyleBackColor = true;
             btnLoadLog.Click += btnLoadLog_Click;
             // 
+            // lblStatus
+            // 
+            lblStatus.AutoSize = true;
+            lblStatus.Location = new Point(324, 79);
+            lblStatus.Name = "lblStatus";
+            lblStatus.Size = new Size(82, 20);
+            lblStatus.TabIndex = 34;
+            lblStatus.Text = "Disconnect";
+            // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
@@ -548,8 +531,6 @@
             Name = "MainForm";
             Text = "MainForm";
             Load += MainForm_Load;
-            statusStrip1.ResumeLayout(false);
-            statusStrip1.PerformLayout();
             groupBox2.ResumeLayout(false);
             groupBox2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)nudCount).EndInit();
@@ -563,10 +544,6 @@
         }
 
         #endregion
-
-        private ToolStripStatusLabel lblStatus;
-        private StatusStrip statusStrip1;
-        private ToolStripStatusLabel toolStripStatusLabel1;
         private RichTextBox rtbLog;
         private System.ComponentModel.BackgroundWorker backgroundWorker1;
         private GroupBox groupBox2;
@@ -607,5 +584,6 @@
         private Label label1;
         private DataGridView dataLog;
         private Button btnLoadLog;
+        private Label lblStatus;
     }
 }

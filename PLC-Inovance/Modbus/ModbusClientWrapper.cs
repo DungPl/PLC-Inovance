@@ -75,12 +75,13 @@ namespace PLC_Inovance.Modbus
                             return null;
                     }
                 }
-                catch
-                {
-                    // treat any exception as loss of connection
-                    try { _client?.Disconnect(); } catch { }
-                    _client = null;
-                    return null;
+                catch(Exception ex) {
+
+                    //// treat any exception as loss of connection
+                    //try { _client?.Disconnect(); } catch { }
+                    //_client = null;
+                    //return null;
+                    throw;
                 }
             }
         }
@@ -91,58 +92,64 @@ namespace PLC_Inovance.Modbus
         {
             if (!IsConnected) return null;
             ushort modbusStartAddress = 0;
-
-            switch (type)
+            try
             {
-                case ElemType.D:
-                    modbusStartAddress = (ushort)(0 + startAddr);          // D0 → holding register 0
-                    break;
+                switch (type)
+                {
+                    case ElemType.D:
+                        modbusStartAddress = (ushort)(0 + startAddr);          // D0 → holding register 0
+                        break;
 
-                case ElemType.MW:   // hoặc ElemType.W nếu bạn dùng tên W
-                    modbusStartAddress = (ushort)(1000 + startAddr);       // W0 → holding register 1000
-                    break;
+                    case ElemType.MW:   // hoặc ElemType.W nếu bạn dùng tên W
+                        modbusStartAddress = (ushort)(1000 + startAddr);       // W0 → holding register 1000
+                        break;
 
-                // Thêm các vùng word khác nếu cần
-                // case ElemType.Z:
-                //     modbusStartAddress = (ushort)(2000 + startAddr);
-                //     break;
+                    // Thêm các vùng word khác nếu cần
+                    // case ElemType.Z:
+                    //     modbusStartAddress = (ushort)(2000 + startAddr);
+                    //     break;
 
-                default:
-                    throw new ArgumentException($"Unsupported ElemType for ReadWords: {type}");
+                    default:
+                        throw new ArgumentException($"Unsupported ElemType for ReadWords: {type}");
+                }
+                lock (_lock)
+                {
+                    int[] raw = _client.ReadHoldingRegisters(modbusStartAddress, count);
+
+                    if (typeof(T) == typeof(short))
+                    {
+                        short[] result = new short[count];
+                        for (int i = 0; i < count; i++)
+                        {
+                            result[i] = (short)raw[i];
+                        }
+                        return result as T[];
+                    }
+
+                    if (typeof(T) == typeof(int))
+                    {
+                        int[] result = new int[count];
+                        Array.Copy(raw, result, count);
+                        return result as T[];
+                    }
+
+                    // Nếu cần hỗ trợ ushort (rất phổ biến cho Modbus)
+                    if (typeof(T) == typeof(ushort))
+                    {
+                        ushort[] result = new ushort[count];
+                        for (int i = 0; i < count; i++)
+                        {
+                            result[i] = (ushort)raw[i];
+                        }
+                        return result as T[];
+                    }
+
+                    return null;
+                }
             }
-            lock (_lock)
+            catch (Exception e)
             {
-                int[] raw = _client.ReadHoldingRegisters(modbusStartAddress, count);
-
-                if (typeof(T) == typeof(short))
-                {
-                    short[] result = new short[count];
-                    for (int i = 0; i < count; i++)
-                    {
-                        result[i] = (short)raw[i];
-                    }
-                    return result as T[];
-                }
-
-                if (typeof(T) == typeof(int))
-                {
-                    int[] result = new int[count];
-                    Array.Copy(raw, result, count);
-                    return result as T[];
-                }
-
-                // Nếu cần hỗ trợ ushort (rất phổ biến cho Modbus)
-                if (typeof(T) == typeof(ushort))
-                {
-                    ushort[] result = new ushort[count];
-                    for (int i = 0; i < count; i++)
-                    {
-                        result[i] = (ushort)raw[i];
-                    }
-                    return result as T[];
-                }
-
-                return null;
+                throw;
             }
         }
 
@@ -155,39 +162,45 @@ namespace PLC_Inovance.Modbus
             if (!IsConnected) return false;
             ushort modbusAddress = 0;
 
-
-            lock (_lock)
+            try
             {
-                switch (type)
+                lock (_lock)
                 {
+                    switch (type)
+                    {
 
-                    case ElemType.X:
-                        modbusAddress = (ushort)(0 + address);
-                        // X0 = coil 0
-                        _client.WriteSingleCoil(modbusAddress, value);
-                        break;
-                    case ElemType.Y:
+                        case ElemType.X:
+                            modbusAddress = (ushort)(0 + address);
+                            // X0 = coil 0
+                            _client.WriteSingleCoil(modbusAddress, value);
+                            break;
+                        case ElemType.Y:
 
-                        modbusAddress = (ushort)(1000 + address);
-                        // Y0 = coil 1000 (theo offset server)
-                        _client.WriteSingleCoil(modbusAddress, value);
-                        break;
-                    case ElemType.M:
-                        modbusAddress = (ushort)(2048 + address);       // M0 = coil 2048 (offset phổ biến, KHÔNG dùng 2000 nữa)
-                        _client.WriteSingleCoil(modbusAddress, value);                                         // Nếu bạn muốn giữ mapping cũ: (ushort)(2000 + startAddr);
-                        break;
-                    case ElemType.S:
-                        modbusAddress = (ushort)(3000 + address);
-                        _client.WriteSingleCoil(modbusAddress, value);
-                        break;
-                    case ElemType.B:
-                        modbusAddress = (ushort)(4000 + address);
-                        _client.WriteSingleCoil(modbusAddress, value);
-                        break;
-                    default:
-                        throw new Exception("Unsupported ElemType for bit write");
+                            modbusAddress = (ushort)(1000 + address);
+                            // Y0 = coil 1000 (theo offset server)
+                            _client.WriteSingleCoil(modbusAddress, value);
+                            break;
+                        case ElemType.M:
+                            modbusAddress = (ushort)(2048 + address);       // M0 = coil 2048 (offset phổ biến, KHÔNG dùng 2000 nữa)
+                            _client.WriteSingleCoil(modbusAddress, value);                                         // Nếu bạn muốn giữ mapping cũ: (ushort)(2000 + startAddr);
+                            break;
+                        case ElemType.S:
+                            modbusAddress = (ushort)(3000 + address);
+                            _client.WriteSingleCoil(modbusAddress, value);
+                            break;
+                        case ElemType.B:
+                            modbusAddress = (ushort)(4000 + address);
+                            _client.WriteSingleCoil(modbusAddress, value);
+                            break;
+                        default:
+                            throw new Exception("Unsupported ElemType for bit write");
+                    }
+                    return true;
                 }
-                return true;
+            }
+            catch (Exception ex)
+            {
+                throw;
             }
 
 
@@ -202,42 +215,48 @@ namespace PLC_Inovance.Modbus
             if (!IsConnected) return false;
 
             ushort modbusAddress = 0;
-
-            lock (_lock)
+            try
             {
-                switch (type)
+                lock (_lock)
                 {
-                    case ElemType.D:
-                        modbusAddress = (ushort)(0 + startAddr);
-                        break;
-
-                    case ElemType.MW:
-                        modbusAddress = (ushort)(1000 + startAddr);
-                        break;
-
-                    default:
-                        throw new Exception("Unsupported ElemType for word write");
-                }
-                try
-                {
-                    if (typeof(T) == typeof(short))
+                    switch (type)
                     {
-                        short[] data = values as short[];
-                        int[] buffer = new int[data.Length];
+                        case ElemType.D:
+                            modbusAddress = (ushort)(0 + startAddr);
+                            break;
 
-                        for (int i = 0; i < data.Length; i++)
-                            buffer[i] = data[i];
+                        case ElemType.MW:
+                            modbusAddress = (ushort)(1000 + startAddr);
+                            break;
 
-                        _client.WriteMultipleRegisters(modbusAddress, buffer);
-                        return true;
+                        default:
+                            throw new Exception("Unsupported ElemType for word write");
                     }
+                    try
+                    {
+                        if (typeof(T) == typeof(short))
+                        {
+                            short[] data = values as short[];
+                            int[] buffer = new int[data.Length];
 
-                    return false;
+                            for (int i = 0; i < data.Length; i++)
+                                buffer[i] = data[i];
+
+                            _client.WriteMultipleRegisters(modbusAddress, buffer);
+                            return true;
+                        }
+
+                        return false;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
                 }
-                catch
-                {
-                    return false;
-                }
+            }
+            catch (Exception ex)
+            {
+                throw;
             }
         }
 

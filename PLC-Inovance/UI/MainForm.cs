@@ -44,16 +44,39 @@ namespace PLC_Inovance
             cmbElemType.DataSource = Enum.GetValues(typeof(ElemType));
 
 
-            
+       
+
+            // Cấu hình Auto Reconnect
+            _plc.AutoReconnectEnabled = true;
+            _plc.MaxReconnectAttempts = 4;
+            _plc.ConnectTimeoutMs = 5000;
+          
+         
             cmbElemType.SelectedIndex = 5;// Default to D
             cbType.SelectedIndex = 1; // Default to short
             _db = new DatabaseService();
             _db.Init();
             _plc.ConnectionChanged += connected =>
             {
-                lblStatus.Text = connected ? "Connected" : "Disconnected";
+                if (InvokeRequired)
+                    Invoke(new Action(() =>
+                    {
+                        lblStatus.Text = connected ? "Connected" : "Disconnected";
+                        lblStatus.ForeColor = connected ? Color.Green : Color.Red;
+                    }));
+                else
+                {
+                    lblStatus.Text = connected ? "Connected" : "Disconnected";
+                    lblStatus.ForeColor = connected ? Color.Green : Color.Red;
+                }
             };
-
+            _plc.StatusMessage += message =>
+            {
+                if (InvokeRequired)
+                    Invoke(new Action(() => rtbLog.AppendText($"[PLC] {message}")));
+                else
+                    rtbLog.AppendText($"[PLC] {message}");
+            };
             _polling.XUpdated += bits =>
             {
                 rtbLog.AppendText($"[Polling X] Event XUpdated được gọi lúc {DateTime.Now:HH:mm:ss.fff} - bits length: {bits?.Length ?? -1}\n");
@@ -156,6 +179,8 @@ namespace PLC_Inovance
                     }
                 }
             };
+
+            await AutoConnectAfterLoad();
         }
 
         private void btnConnect_Click(object sender, EventArgs e)
@@ -172,6 +197,47 @@ namespace PLC_Inovance
             else
             {
                 rtbLog.AppendText("Kết nối thất bại\n");
+            }
+
+
+
+        }
+
+
+
+
+        private async Task AutoConnectAfterLoad()
+        {
+            string ip = txtIP.Text.Trim();
+            if (string.IsNullOrEmpty(ip))
+            {
+                AppendLog("[MainForm] Chưa nhập IP PLC!\n");
+                return;
+            }
+
+            AppendLog($"[MainForm] Đang kết nối đến PLC {ip}...\n");
+
+            bool success = await _plc.ConnectAsync(ip);
+
+            if (!success)
+            {
+                AppendLog("[MainForm] Kết nối ban đầu thất bại. Hệ thống sẽ tự động thử lại tối đa 4 lần.\n");
+            }
+        }
+        private void AppendLog(string text)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() =>
+                {
+                    rtbLog.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {text}\n");
+                    rtbLog.ScrollToCaret();
+                }));
+            }
+            else
+            {
+                rtbLog.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {text}\n");
+                rtbLog.ScrollToCaret();
             }
         }
         private void btnDisconnect_Click(object sender, EventArgs e)

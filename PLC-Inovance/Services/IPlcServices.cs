@@ -12,15 +12,32 @@ namespace PLC_Inovance.Services
         // =============================
         // Connection
         // =============================
-
+        public enum PlcConnectionState
+        {
+            Disconnected,
+            Connecting,
+            Connected,
+            Reconnecting,
+            ConnectionFailed
+        }
         bool IsConnected { get; }
 
         bool Connect(string ip, int port = 1502, byte unitId = 1);
-
+        Task<bool> ConnectAsync(string ip, int port = 1502, byte unitId = 1);
         void Disconnect();
 
-        bool AutoReconnect(string ip, int port = 1502, byte unitId = 1);
-        event Action<bool> ConnectionChanged;
+        bool AutoReconnectEnabled { get; set; }
+        int MaxReconnectAttempts { get; set; }      // Mặc định = 4
+        int ConnectTimeoutMs { get; set; }          // Mặc định = 5000ms
+
+        // =============================
+        // Events
+        // =============================
+        event Action<bool> ConnectionChanged;                    // True = Connected, False = Disconnected
+       // event Action<PlcConnectionState> ConnectionStateChanged; // Trạng thái chi tiết
+        event Action<string> StatusMessage;                      // Thông báo text (rất hữu ích cho UI)
+
+       
 
         // =============================
         // Read

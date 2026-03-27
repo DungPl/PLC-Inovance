@@ -18,27 +18,33 @@ namespace PLC_Inovance.Services
         private readonly object _lock = new object();
 
         private int _connectAttemps = 0;
-        private const int _maxReconnectAttempts = 4;
-        private const int ConnectTimeoutMs = 5000;
+        public int MaxReconnectAttempts { get; set; } = 4;
+        public int ConnectTimeoutMs { get; set; } = 5000;
+        public int ReconnectDelayMs { get; set; } = 2000;   
         private bool _isConnected = false;
+        private bool _Reconnect = false;
         public bool IsConnected => _isConnected;
         private int reconnectAttemps = 0;
+        public bool AutoReconnectEnabled { get; set; } = true;
         public event Action<bool> ConnectionChanged;
         public event Action<bool[]> XUpdated;
         private string _lastIp = "";
         private int _lastPort = 1502;
         private byte _lastUnitId = 1;
 
-      
+
         public event Action<string> StatusMessage;
+
         public PLC()
         {
             _modbus = new ModbusClientWrapper();
 
             _pollingTimer = new System.Timers.Timer(500);//cứ nửa giây định kỳ đọc PLC 1 lần 
-                                                         // _pollingTimer.Elapsed += PollingTimer_Elapsed;
+            _pollingTimer.Elapsed += PollingTimer_Elapsed;
 
-            _reconnectTimer = new System.Timers.Timer(2000);
+            _reconnectTimer = new System.Timers.Timer(ReconnectDelayMs);
+            _reconnectTimer.AutoReset = false;                    // Quan trọng: chỉ chạy 1 lần mỗi lần Start()
+            _reconnectTimer.Elapsed += async (s, e) => await ReconnectTimer_ElapsedAsync();
         }
         #region ===== CONNECTION =====
         // ====================== HÀM CONNECT CHÍNH (ĐÃ CẢI TIẾN) ======================
@@ -79,7 +85,7 @@ namespace PLC_Inovance.Services
                     lock (this)
                     {
                         _isConnected = true;
-                        _connectAttemps= 0;
+                        _connectAttemps = 0;
                         _reconnectTimer.Stop();
                     }
 
@@ -102,28 +108,88 @@ namespace PLC_Inovance.Services
                 RaiseStatus(isReconnect
                     ? $"❌ Thử kết nối lại thất bại: {ex.Message}"
                     : $"❌ Kết nối thất bại: {ex.Message}");
+                if (AutoReconnectEnabled && !isReconnect)
+                {
+                    _connectAttemps = 0;
+                    _reconnectTimer.Start(); // 🔥 thêm
+                }
 
                 return false;
             }
         }
+        private async Task ReconnectTimer_ElapsedAsync()
+        {
+            // Tránh chạy chồng chéo
+            if (_Reconnect || !_lastIp.Any() || !AutoReconnectEnabled)
+                return;
+
+            lock (_lock)
+            {
+                if (_Reconnect) return;
+                _Reconnect = true;
+            }
+
+            _connectAttemps++;
+
+            RaiseStatus($"🔄 Thử kết nối lại lần {_connectAttemps}/{MaxReconnectAttempts}...");
+
+            bool success = await ConnectInternalAsync(_lastIp, _lastPort, _lastUnitId, isReconnect: true);
+
+            lock (_lock)
+            {
+                _Reconnect = false;
+            }
+
+            if (!success && _connectAttemps < MaxReconnectAttempts)
+            {
+                // Thử lại sau delay
+                _reconnectTimer.Interval = ReconnectDelayMs; // có thể tăng dần nếu muốn: ReconnectDelayMs * _reconnectAttempts
+                _reconnectTimer.Start();
+            }
+            else if (!success && _connectAttemps >= MaxReconnectAttempts)
+            {
+                RaiseStatus($"❌ Đã thử kết nối lại {MaxReconnectAttempts} lần thất bại. Tạm dừng auto reconnect.");
+                // Bạn có thể thêm logic: AutoReconnectEnabled = false; hoặc cho phép user bấm nút Connect lại
+            }
+        }
+        private void PollingTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            if (!IsConnected) return;
+
+            try
+            {
+                var data = _modbus.ReadBits(ElemType.X, 0, 8);
+                XUpdated?.Invoke(data);
+            }
+            catch (Exception ex)
+            {
+                if (IsConnectionError(ex))
+                {
+                    HandleConnectionLost();
+                }
+            }
+        }
         private async void ReconnectTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
-            if (_connectAttemps >= _maxReconnectAttempts)
+            _reconnectTimer.Stop();
+            if (_connectAttemps >= MaxReconnectAttempts)
             {
-                RaiseStatus($"❌ Đã thử kết nối lại {_maxReconnectAttempts} lần thất bại.");
+                RaiseStatus($"❌ Đã thử kết nối lại {MaxReconnectAttempts} lần thất bại.");
                 return;
             }
 
             _connectAttemps++;
-            RaiseStatus($"🔄 Thử kết nối lại lần {_connectAttemps}/{_maxReconnectAttempts}...");
+            RaiseStatus($"🔄 Thử kết nối lại lần {_connectAttemps}/{MaxReconnectAttempts}...");
 
             bool success = await ConnectInternalAsync(_lastIp, _lastPort, _lastUnitId, isReconnect: true);
 
-            if (!success && _connectAttemps < _maxReconnectAttempts)
+            if (!success && _connectAttemps < MaxReconnectAttempts)
             {
                 _reconnectTimer.Start(); // Thử lại sau ReconnectDelay
             }
         }
+
+
         private void HandleConnectionLost()
         {
             lock (this)
@@ -132,10 +198,17 @@ namespace PLC_Inovance.Services
                 {
                     _isConnected = false;
                     _pollingTimer.Stop();
+
                     RaiseStatus("⚠️ Mất kết nối với PLC. Đang thử kết nối lại...");
 
                     _connectAttemps = 0;
-                    _reconnectTimer.Start();
+
+                    if (AutoReconnectEnabled)
+                    {// 🔥 THÊM DÒNG NÀY
+                        _connectAttemps = 0;
+                        _reconnectTimer.Stop();
+                        _reconnectTimer.Start();
+                    }
                 }
             }
         }
@@ -147,6 +220,7 @@ namespace PLC_Inovance.Services
 
                 if (result)
                 {
+                    _isConnected = true;
                     _pollingTimer.Start();
                     ConnectionChanged?.Invoke(true);
                 }
@@ -193,11 +267,22 @@ namespace PLC_Inovance.Services
         public bool[] ReadBits(ElemType type, int startAddr, int count)
         {
             if (!IsConnected) return null;
-
-            lock (_lock)
+            try
             {
-                return _modbus.ReadBits(type, startAddr, count);
+                lock (_lock)
+                {
+                    return _modbus.ReadBits(type, startAddr, count);
+                }
             }
+            catch(Exception ex) {
+
+                if (IsConnectionError(ex))
+                {
+                    HandleConnectionLost();
+                }
+                return null;
+            }
+
         }
 
         public short[] ReadWords(ElemType type, int startAddr, int count)
