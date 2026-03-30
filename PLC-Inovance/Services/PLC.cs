@@ -243,7 +243,7 @@ namespace PLC_Inovance.Services
 
         private void RaiseStatus(string message)
         {
-            StatusMessage?.Invoke(message);
+            StatusMessage?.Invoke(message + Environment.NewLine);
         }
 
         public void Stop()
@@ -295,6 +295,17 @@ namespace PLC_Inovance.Services
             }
         }
 
+        // Thêm hàm mới: Đọc float
+        public float[] ReadFloats(ElemType type, int startAddr, int count)
+        {
+            if (!IsConnected) return null;
+
+            lock (_lock)
+            {
+                return _modbus.ReadWords<float>(type, startAddr, count);
+            }
+        }
+
         #endregion
 
         #region ===== WRITE =====
@@ -309,7 +320,7 @@ namespace PLC_Inovance.Services
             }
         }
 
-        public bool WriteWords(ElemType type, int startAddr, short[] values)
+        public bool WriteWords<T>(ElemType type, int startAddr, T[] values) where T : struct
         {
             if (!IsConnected) return false;
 

@@ -75,7 +75,8 @@ namespace PLC_Inovance.Modbus
                             return null;
                     }
                 }
-                catch(Exception ex) {
+                catch (Exception ex)
+                {
 
                     //// treat any exception as loss of connection
                     //try { _client?.Disconnect(); } catch { }
@@ -114,35 +115,78 @@ namespace PLC_Inovance.Modbus
                 }
                 lock (_lock)
                 {
-                    int[] raw = _client.ReadHoldingRegisters(modbusStartAddress, count);
 
-                    if (typeof(T) == typeof(short))
-                    {
-                        short[] result = new short[count];
-                        for (int i = 0; i < count; i++)
-                        {
-                            result[i] = (short)raw[i];
-                        }
-                        return result as T[];
-                    }
 
-                    if (typeof(T) == typeof(int))
-                    {
-                        int[] result = new int[count];
-                        Array.Copy(raw, result, count);
-                        return result as T[];
-                    }
+                    // ===== Xác định số register cần đọc =====
+                    int registerCount = count;
 
-                    // Nếu cần hỗ trợ ushort (rất phổ biến cho Modbus)
+                    if (typeof(T) == typeof(int) || typeof(T) == typeof(float))
+                        registerCount = count * 2;
+
+                    int[] raw = _client.ReadHoldingRegisters(modbusStartAddress, registerCount);
+                    if (raw == null || raw.Length == 0)
+                        return null;
+
+                    // ===== ushort (chuẩn Modbus) =====
                     if (typeof(T) == typeof(ushort))
                     {
                         ushort[] result = new ushort[count];
                         for (int i = 0; i < count; i++)
-                        {
                             result[i] = (ushort)raw[i];
-                        }
+
                         return result as T[];
                     }
+
+                    // ===== short =====
+                    if (typeof(T) == typeof(short))
+                    {
+                        short[] result = new short[count];
+                        for (int i = 0; i < count; i++)
+                            result[i] = (short)raw[i];
+
+                        return result as T[];
+                    }
+
+                    // ===== int (2 register) =====
+                    if (typeof(T) == typeof(int))
+                    {
+                        int[] result = new int[count];
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            int high = raw[i * 2];
+                            int low = raw[i * 2 + 1];
+
+                            result[i] = (high << 16) | (low & 0xFFFF);
+                        }
+
+                        return result as T[];
+                    }
+
+                    // ===== float (2 register) =====
+                    if (typeof(T) == typeof(float))
+                    {
+                        float[] result = new float[count];
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            ushort highWord = (ushort)raw[i * 2];     // register n
+                            ushort lowWord = (ushort)raw[i * 2 + 1]; // register n+1
+
+                            // Swap word: lowWord làm high, highWord làm low
+                            byte[] bytes = new byte[4];
+                            bytes[0] = (byte)(lowWord >> 8);
+                            bytes[1] = (byte)(lowWord & 0xFF);
+                            bytes[2] = (byte)(highWord >> 8);
+                            bytes[3] = (byte)(highWord & 0xFF);
+
+                            result[i] = BitConverter.ToSingle(bytes, 0);
+                        }
+
+                        return result as T[];
+                    }
+
+                    throw new NotSupportedException($"Type {typeof(T)} not supported");
 
                     return null;
                 }
@@ -234,6 +278,17 @@ namespace PLC_Inovance.Modbus
                     }
                     try
                     {
+                        if (typeof(T) == typeof(ushort))
+                        {
+                            ushort[] data = values as ushort[];
+                            int[] buffer = new int[data.Length];
+
+                            for (int i = 0; i < data.Length; i++)
+                                buffer[i] = data[i];
+
+                            _client.WriteMultipleRegisters(modbusAddress, buffer);
+                            return true;
+                        }
                         if (typeof(T) == typeof(short))
                         {
                             short[] data = values as short[];
@@ -245,8 +300,43 @@ namespace PLC_Inovance.Modbus
                             _client.WriteMultipleRegisters(modbusAddress, buffer);
                             return true;
                         }
+                        // ===== int (2 register) =====
+                        if (typeof(T) == typeof(int))
+                        {
+                            int[] data = values as int[];
+                            int[] buffer = new int[data.Length * 2];
 
-                        return false;
+                            for (int i = 0; i < data.Length; i++)
+                            {
+                                buffer[i * 2] = (data[i] >> 16) & 0xFFFF; // high
+                                buffer[i * 2 + 1] = data[i] & 0xFFFF;         // low
+                            }
+
+                            _client.WriteMultipleRegisters(modbusAddress, buffer);
+                            return true;
+                        }
+
+                        // ===== float (2 register) =====
+                        // ===== float (2 register) - CDAB order (rất phổ biến với PLC Việt Nam) =====
+                        if (typeof(T) == typeof(float))
+                        {
+                            float[] data = values as float[];
+                            int[] buffer = new int[data.Length * 2];
+
+                            for (int i = 0; i < data.Length; i++)
+                            {
+                                byte[] bytes = BitConverter.GetBytes(data[i]);   // Little-endian của C# (Intel)
+
+                                // CDAB format: Low word trước, High word sau
+                                // bytes[0]=D, [1]=C, [2]=B, [3]=A
+                                buffer[i * 2] = (bytes[1] << 8) | bytes[0];   // Low word  (CD)
+                                buffer[i * 2 + 1] = (bytes[3] << 8) | bytes[2];   // High word (AB)
+                            }
+
+                            _client.WriteMultipleRegisters(modbusAddress, buffer);
+                            return true;
+                        }
+                        throw new NotSupportedException($"Type {typeof(T)} not supported");
                     }
                     catch
                     {

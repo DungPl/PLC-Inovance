@@ -47,14 +47,14 @@ namespace PLC_Inovance.Services
 
         short[] ReadWords(ElemType type, int startAddress, int count);
 
-
+        float[] ReadFloats(ElemType type, int startAddress, int count);
         // =============================
         // Write
         // =============================
 
         bool WriteBit(ElemType type, int address, bool value);
 
-        bool WriteWords(ElemType type, int startAddress, short[] values);
+        bool WriteWords<T>(ElemType type, int startAddress, T[] values) where T : struct;
 
 
         // =============================

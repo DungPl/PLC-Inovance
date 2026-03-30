@@ -211,17 +211,17 @@ namespace PLC_Inovance
             string ip = txtIP.Text.Trim();
             if (string.IsNullOrEmpty(ip))
             {
-                AppendLog("[MainForm] Chưa nhập IP PLC!\n");
+                rtbLog.AppendText("[MainForm] Chưa nhập IP PLC!\n");
                 return;
             }
 
-            AppendLog($"[MainForm] Đang kết nối đến PLC {ip}...\n");
+            rtbLog.AppendText($"[MainForm] Đang kết nối đến PLC {ip}...\n");
 
             bool success = await _plc.ConnectAsync(ip);
 
             if (!success)
             {
-                AppendLog("[MainForm] Kết nối ban đầu thất bại. Hệ thống sẽ tự động thử lại tối đa 4 lần.\n");
+                rtbLog.AppendText("[MainForm] Kết nối ban đầu thất bại. Hệ thống sẽ tự động thử lại tối đa 4 lần.\n");
             }
         }
         private void AppendLog(string text)
@@ -345,30 +345,62 @@ namespace PLC_Inovance
                 }
                 else
                 {
-                    short[] words = _plc.ReadWords(type, startAddr, count);
+                    string dataType = cbType.SelectedItem?.ToString()?.ToLower();
 
-                    if (words == null)
+                    if (dataType == "float")
                     {
-                        rtbLog.AppendText("Không đọc được dữ liệu\n");
-                        return;
+                        float[] floats = _plc.ReadFloats(type, startAddr, count);
+
+                        if (floats == null)
+                        {
+                            rtbLog.AppendText("Không đọc được dữ liệu float\n");
+                            return;
+                        }
+
+                        if (type == ElemType.D)
+                        {
+                            if (InvokeRequired)
+                                Invoke(new Action(() => UpdateDUI_Float(floats)));  // Bạn cần viết hàm này
+                            else
+                                UpdateDUI_Float(floats);
+                        }
+
+                        rtbLog.AppendText("Read Floats: ");
+                        rtbLog.AppendText(string.Join(", ", floats.Select(f => f.ToString("F4"))));
+                        rtbLog.AppendText("\n");
                     }
-                    if (type == ElemType.D)
+                    else
                     {
-                        // Chỉ cập nhật nếu đọc đúng vùng D0~D4 mà form đang hiển thị
-                        if (InvokeRequired)
-                            Invoke(new Action(() => UpdateDUI(words)));
-                        else
-                            UpdateDUI(words);
+                        // Phần short cũ giữ nguyên
+                        short[] words = _plc.ReadWords(type, startAddr, count);
+
+                        if (words == null)
+                        {
+                            rtbLog.AppendText("Không đọc được dữ liệu\n");
+                            return;
+                        }
+                        if (type == ElemType.D)
+                        {
+                            if (InvokeRequired)
+                                Invoke(new Action(() => UpdateDUI(words)));
+                            else
+                                UpdateDUI(words);
+                        }
+                        rtbLog.AppendText("Read Words: ");
+                        rtbLog.AppendText(string.Join(",", words));
+                        rtbLog.AppendText("\n");
                     }
-                    rtbLog.AppendText("Read Words: ");
-                    rtbLog.AppendText(string.Join(",", words));
-                    rtbLog.AppendText("\n");
                 }
             }
             catch (Exception ex)
             {
                 rtbLog.AppendText("Lỗi đọc: " + ex.Message + "\n");
             }
+        }
+
+        private void UpdateDUI_Float(float[] floats)
+        {
+            throw new NotImplementedException();
         }
 
         private void btnWrite_Click(object sender, EventArgs e)
@@ -427,29 +459,81 @@ namespace PLC_Inovance
                         }
                     }
                 }
+                //else
+                //{
+                //    string[] parts = txtValue.Text.Split(',');
+                //    short[] values = parts.Select(p => short.Parse(p.Trim())).ToArray();
+
+                //    bool result = _plc.WriteWords(type, startAddr, values);
+                //    rtbLog.AppendText(result ? "Ghi word thành công\n" : "Ghi word thất bại\n");
+
+                //    // Nếu ghi thành công → đọc lại D để cập nhật UI và DB
+                //    if (result && type == ElemType.D )
+                //    {
+                //        short[] words = _plc.ReadWords(ElemType.D, 0, 8);
+                //        if (words != null)
+                //        {
+                //            var shorts = Array.ConvertAll(words, w => (short)w);
+                //            if (InvokeRequired)
+                //                Invoke(() => UpdateDUI(shorts));
+                //            else
+                //                UpdateDUI(shorts);
+
+                //            // Lưu vào DB
+                //            SaveToDbAfterWrite(null, shorts);
+                //        }
+                //    }
+                //}
                 else
                 {
-                    string[] parts = txtValue.Text.Split(',');
-                    short[] values = parts.Select(p => short.Parse(p.Trim())).ToArray();
+                    string input = txtValue.Text.Trim();
+                    string selectedType = cbType.SelectedItem.ToString();
 
-                    bool result = _plc.WriteWords(type, startAddr, values);
-                    rtbLog.AppendText(result ? "Ghi word thành công\n" : "Ghi word thất bại\n");
-
-                    // Nếu ghi thành công → đọc lại D để cập nhật UI và DB
-                    if (result && type == ElemType.D )
+                    try
                     {
-                        short[] words = _plc.ReadWords(ElemType.D, 0, 8);
-                        if (words != null)
+                        if (selectedType == "short")
                         {
-                            var shorts = Array.ConvertAll(words, w => (short)w);
-                            if (InvokeRequired)
-                                Invoke(() => UpdateDUI(shorts));
-                            else
-                                UpdateDUI(shorts);
+                            short[] values = input.Split(',')
+                                                  .Select(p => short.Parse(p.Trim()))
+                                                  .ToArray();
 
-                            // Lưu vào DB
-                            SaveToDbAfterWrite(null, shorts);
+                            _plc.WriteWords(type, startAddr, values);
                         }
+                        else if (selectedType == "ushort")
+                        {
+                            ushort[] values = input.Split(',')
+                                                   .Select(p => ushort.Parse(p.Trim()))
+                                                   .ToArray();
+
+                            _plc.WriteWords(type, startAddr, values);
+                        }
+                        else if (selectedType == "int")
+                        {
+                            int[] values = input.Split(',')
+                                                .Select(p => int.Parse(p.Trim()))
+                                                .ToArray();
+
+                            _plc.WriteWords(type, startAddr, values);
+                        }
+                        else if (selectedType == "float")
+                        {
+                            float[] values = input.Split(',')
+                                                  .Select(p => float.Parse(p.Trim()))
+                                                  .ToArray();
+
+                            _plc.WriteWords(type, startAddr, values);
+                        }
+                        else
+                        {
+                            rtbLog.AppendText("Kiểu dữ liệu không hỗ trợ\n");
+                            return;
+                        }
+
+                        rtbLog.AppendText("Ghi word thành công\n");
+                    }
+                    catch (Exception ex)
+                    {
+                        rtbLog.AppendText("Lỗi parse dữ liệu: " + ex.Message + "\n");
                     }
                 }
             }
