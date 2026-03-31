@@ -301,7 +301,7 @@ namespace PLC_Inovance
                 }
             }
         }
-        private void btnRead_Click(object sender, EventArgs e)
+        private async void btnRead_Click(object sender, EventArgs e)
         {
             if (!_plc.IsConnected)
             {
@@ -345,50 +345,43 @@ namespace PLC_Inovance
                 }
                 else
                 {
-                    string dataType = cbType.SelectedItem?.ToString()?.ToLower();
+                    if (!Enum.TryParse<ElemType>(cmbElemType.SelectedItem?.ToString(), out var elemType))
+                        return;
 
-                    if (dataType == "float")
+                    ModbusDataType dataType = GetModbusDataTypeFromCombo();
+
+                    try
                     {
-                        float[] floats = _plc.ReadFloats(type, startAddr, count);
-
-                        if (floats == null)
+                        if (dataType == ModbusDataType.String)
                         {
-                            rtbLog.AppendText("Không đọc được dữ liệu float\n");
-                            return;
+                            string result = await _plc.ReadSingleAsync<string>(elemType, startAddr, dataType, 40);
+                            rtbLog.AppendText($"Read String [{elemType}{startAddr}]: {result}\n");
                         }
-
-                        if (type == ElemType.D)
+                        else if (count == 1)
                         {
-                            if (InvokeRequired)
-                                Invoke(new Action(() => UpdateDUI_Float(floats)));  // Bạn cần viết hàm này
+                            // Dùng object cho single value
+                            var result = await _plc.ReadSingleAsync<object>(elemType, startAddr, dataType);
+                            rtbLog.AppendText($"Read {dataType} [{elemType}{startAddr}]: {result}\n");
+                        }
+                        else
+                        {
+                            // Dùng object[] cho multiple values
+                            var results = await _plc.ReadMultipleAsync<object>(elemType, startAddr, count, dataType);
+
+                            if (results != null)
+                            {
+                                string displayText = string.Join(", ", results.Select(r => r?.ToString() ?? "null"));
+                                rtbLog.AppendText($"Read {count} {dataType}: {displayText}\n");
+                            }
                             else
-                                UpdateDUI_Float(floats);
+                            {
+                                rtbLog.AppendText("Không đọc được dữ liệu\n");
+                            }
                         }
-
-                        rtbLog.AppendText("Read Floats: ");
-                        rtbLog.AppendText(string.Join(", ", floats.Select(f => f.ToString("F4"))));
-                        rtbLog.AppendText("\n");
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        // Phần short cũ giữ nguyên
-                        short[] words = _plc.ReadWords(type, startAddr, count);
-
-                        if (words == null)
-                        {
-                            rtbLog.AppendText("Không đọc được dữ liệu\n");
-                            return;
-                        }
-                        if (type == ElemType.D)
-                        {
-                            if (InvokeRequired)
-                                Invoke(new Action(() => UpdateDUI(words)));
-                            else
-                                UpdateDUI(words);
-                        }
-                        rtbLog.AppendText("Read Words: ");
-                        rtbLog.AppendText(string.Join(",", words));
-                        rtbLog.AppendText("\n");
+                        rtbLog.AppendText($"Lỗi đọc: {ex.Message}\n");
                     }
                 }
             }
@@ -397,7 +390,19 @@ namespace PLC_Inovance
                 rtbLog.AppendText("Lỗi đọc: " + ex.Message + "\n");
             }
         }
-
+        private ModbusDataType GetModbusDataTypeFromCombo()
+        {
+            return cbType.SelectedItem?.ToString()?.ToLower() switch
+            {
+                "short" or "int16" => ModbusDataType.Int16,
+                "ushort" or "uint16" => ModbusDataType.UInt16,
+                "int" or "int32" => ModbusDataType.Int32,
+                "float" => ModbusDataType.Float,
+                "double" => ModbusDataType.Double,
+                "string" => ModbusDataType.String,
+                _ => ModbusDataType.Int16
+            };
+        }
         private void UpdateDUI_Float(float[] floats)
         {
             throw new NotImplementedException();
@@ -488,7 +493,11 @@ namespace PLC_Inovance
                 {
                     string input = txtValue.Text.Trim();
                     string selectedType = cbType.SelectedItem.ToString();
-
+                    if (selectedType == "float" || selectedType == "int")
+                    {
+                        if (startAddr % 2 != 0)
+                            throw new Exception("Float/Int32 must start at even address!");
+                    }
                     try
                     {
                         if (selectedType == "short")

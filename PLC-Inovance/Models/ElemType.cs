@@ -65,4 +65,7 @@ namespace PLC_Inovance.Models
         public const int MODBUSTCP_RD_REG_MAX = 123;
         public const int MODBUSTCP_WR_REG_MAX = 121;
     }
+
+
+  
 }

@@ -1,4 +1,5 @@
-﻿using Microsoft.VisualBasic.Devices;
+﻿using EasyModbus;
+using Microsoft.VisualBasic.Devices;
 using PLC_Inovance.Modbus;
 using PLC_Inovance.Models;
 using System;
@@ -169,26 +170,7 @@ namespace PLC_Inovance.Services
                 }
             }
         }
-        private async void ReconnectTimer_Elapsed(object sender, ElapsedEventArgs e)
-        {
-            _reconnectTimer.Stop();
-            if (_connectAttemps >= MaxReconnectAttempts)
-            {
-                RaiseStatus($"❌ Đã thử kết nối lại {MaxReconnectAttempts} lần thất bại.");
-                return;
-            }
-
-            _connectAttemps++;
-            RaiseStatus($"🔄 Thử kết nối lại lần {_connectAttemps}/{MaxReconnectAttempts}...");
-
-            bool success = await ConnectInternalAsync(_lastIp, _lastPort, _lastUnitId, isReconnect: true);
-
-            if (!success && _connectAttemps < MaxReconnectAttempts)
-            {
-                _reconnectTimer.Start(); // Thử lại sau ReconnectDelay
-            }
-        }
-
+      
 
         private void HandleConnectionLost()
         {
@@ -294,6 +276,67 @@ namespace PLC_Inovance.Services
                 return _modbus.ReadWords<short>(type, startAddr, count);
             }
         }
+        // ====================== READ ======================
+
+        /// <summary>
+        /// Đọc 1 giá trị duy nhất
+        /// </summary>
+        public async Task<T> ReadSingleAsync<T>(ElemType elemType, int startAddr, ModbusDataType dataType, int stringLength = 0)
+        {
+            var results = await ReadMultipleAsync<T>(elemType, startAddr, 1, dataType, stringLength);
+            return results != null && results.Length > 0 ? results[0] : default;
+        }
+
+        /// <summary>
+        /// Đọc nhiều giá trị
+        /// </summary>
+        public async Task<T[]> ReadMultipleAsync<T>(ElemType elemType, int startAddr, int count, ModbusDataType dataType, int stringLength = 0)
+        {
+            if (!IsConnected)
+                return null;
+
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    object result = _modbus.Read(elemType, startAddr, count, dataType, stringLength);
+
+                    if (result == null)
+                        return null;
+
+                    // Xử lý riêng String
+                    if (dataType == ModbusDataType.String)
+                    {
+                        string strValue = result as string ?? result.ToString();
+                        return new T[] { (T)(object)strValue };
+                    }
+
+                    // ===== SỬA LỖI Ở ĐÂY =====
+                    if (result is T[] alreadyCorrectType)
+                    {
+                        return alreadyCorrectType;                    // Trường hợp T khớp với kiểu thực (float[], short[], int[]...)
+                    }
+
+                    if (result is Array array)
+                    {
+                        // Chuyển từ int[] → T[] (ví dụ: int[] → object[])
+                        T[] converted = new T[array.Length];
+                        for (int i = 0; i < array.Length; i++)
+                        {
+                            converted[i] = (T)Convert.ChangeType(array.GetValue(i), typeof(T));
+                        }
+                        return converted;
+                    }
+
+                    return null;
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PlcService] Read error at {elemType}{startAddr}: {ex.Message}");
+                return null;
+            }
+        }
 
         // Thêm hàm mới: Đọc float
         public float[] ReadFloats(ElemType type, int startAddr, int count)
@@ -332,28 +375,8 @@ namespace PLC_Inovance.Services
 
         #endregion
 
-        #region ===== POLLING =====
+      
 
-        //private void PollingTimer_Elapsed(object sender, ElapsedEventArgs e)
-        //{
-        //    if (!IsConnected) return;
-
-        //    try
-        //    {
-        //        // Ví dụ đọc X0-X15
-        //        bool[] xBits = _modbus.ReadBits(ElemType.X, 0, 16);
-
-        //        XUpdated?.Invoke(xBits);
-        //    }
-        //    catch
-        //    {
-        //        // nếu lỗi khi polling → coi như mất kết nối
-        //        Disconnect();
-        //    }
-        //}
-
-        #endregion
-
-        public event Action<bool[]> OnXChanged;
+  
     }
 }

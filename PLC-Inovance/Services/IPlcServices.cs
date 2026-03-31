@@ -46,7 +46,8 @@ namespace PLC_Inovance.Services
         bool[] ReadBits(ElemType type, int startAddress, int count);
 
         short[] ReadWords(ElemType type, int startAddress, int count);
-
+        Task<T> ReadSingleAsync<T>(ElemType elemType, int startAddr, ModbusDataType dataType, int stringLength = 0);
+        Task<T[]> ReadMultipleAsync<T>(ElemType elemType, int startAddr, int count, ModbusDataType dataType, int stringLength = 0);
         float[] ReadFloats(ElemType type, int startAddress, int count);
         // =============================
         // Write
