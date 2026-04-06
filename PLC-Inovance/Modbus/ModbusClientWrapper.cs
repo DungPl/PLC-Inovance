@@ -1,6 +1,8 @@
 ﻿using EasyModbus;
 using PLC_Inovance.Models;
 using PLC_Inovance.Utils;
+using System.Diagnostics;
+using System.Text;
 
 
 namespace PLC_Inovance.Modbus
@@ -284,8 +286,10 @@ namespace PLC_Inovance.Modbus
                     }
                     try
                     {
+
                         if (typeof(T) == typeof(ushort))
                         {
+
                             ushort[] data = values as ushort[];
                             int[] buffer = new int[data.Length];
 
@@ -350,6 +354,38 @@ namespace PLC_Inovance.Modbus
                             _client.WriteMultipleRegisters(modbusAddress, registers);
                             return true;
                         }
+                        else if (typeof(T) == typeof(double))
+                        {
+                            double[] data = values as double[];
+                            byte[] byteBuffer = new byte[data.Length * 8];
+                            Buffer.BlockCopy(data, 0, byteBuffer, 0, byteBuffer.Length);
+
+                            int[] registers = new int[data.Length * 4]; // 4 registers mỗi double
+
+                            for (int i = 0; i < data.Length; i++)
+                            {
+                                int byteIndex = i * 8;
+
+                                // Modbus thường dùng Big-Endian (High word trước), nhiều PLC dùng CDAB hoặc ABCD
+                                // Dưới đây là cách phổ biến: byte order theo IEEE 754 → swap phù hợp
+                                byte b7 = byteBuffer[byteIndex + 7];
+                                byte b6 = byteBuffer[byteIndex + 6];
+                                byte b5 = byteBuffer[byteIndex + 5];
+                                byte b4 = byteBuffer[byteIndex + 4];
+                                byte b3 = byteBuffer[byteIndex + 3];
+                                byte b2 = byteBuffer[byteIndex + 2];
+                                byte b1 = byteBuffer[byteIndex + 1];
+                                byte b0 = byteBuffer[byteIndex + 0];
+
+                                registers[i * 4 + 0] = (b7 << 8) | b6;   // Highest word
+                                registers[i * 4 + 1] = (b5 << 8) | b4;
+                                registers[i * 4 + 2] = (b3 << 8) | b2;
+                                registers[i * 4 + 3] = (b1 << 8) | b0;   // Lowest word
+                            }
+
+                            _client.WriteMultipleRegisters(modbusAddress, registers);
+                            return true;
+                        }
                         throw new NotSupportedException($"Type {typeof(T)} not supported");
                     }
                     catch
@@ -363,7 +399,45 @@ namespace PLC_Inovance.Modbus
                 throw;
             }
         }
+        /// <summary>
+        /// Ghi chuỗi với cơ chế xóa sạch vùng trước khi ghi để tránh dữ liệu thừa
+        /// </summary>
+        public bool WriteString(ElemType type, int startAddr, string value, int fixedRegisters = 10)
+        {
+            if (!IsConnected)
+                return false;
 
+            try
+            {
+                // Chuyển string thành bytes
+                byte[] bytes = Encoding.ASCII.GetBytes(value ?? "");
+
+                // Tạo mảng register với kích thước CỐ ĐỊNH và khởi tạo toàn bộ = 0
+                int[] registers = new int[fixedRegisters];   // ← Quan trọng: khởi tạo = 0
+
+                // Copy dữ liệu string vào (Big-Endian)
+                for (int i = 0; i < fixedRegisters; i++)
+                {
+                    int byteIndex = i * 2;
+
+                    byte high = (byteIndex < bytes.Length) ? bytes[byteIndex] : (byte)0;
+                    byte low = (byteIndex + 1 < bytes.Length) ? bytes[byteIndex + 1] : (byte)0;
+
+                    registers[i] = (high << 8) | low;
+                }
+
+                ushort modbusAddress = GetModbusAddress(type, startAddr);
+
+                _client.WriteMultipleRegisters(modbusAddress, registers);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"WriteString Error: {ex.Message}");
+                return false;
+            }
+        }
         #endregion
 
 
@@ -371,26 +445,28 @@ namespace PLC_Inovance.Modbus
         public object Read(ElemType elemType, int startAddr, int count, ModbusDataType dataType, int stringLength = 0)
         {
             if (!IsConnected) return null;
+           
+                ushort modbusAddr = GetModbusAddress(elemType, startAddr);
 
-            ushort modbusAddr = GetModbusAddress(elemType, startAddr);
 
-            // === SỬA Ở ĐÂY ===
-            int registersPerItem = ModbusHelper.GetRegisterCount(dataType, stringLength);
-            int totalRegisters = count * registersPerItem;        // ← Phải nhân với registersPerItem
+                // === SỬA Ở ĐÂY ===
+                int registersPerItem = ModbusHelper.GetRegisterCount(dataType, stringLength);
+                int totalRegisters = count * registersPerItem;        // ← Phải nhân với registersPerItem
 
-            lock (_lock)
-            {
-                int[] raw = ReadRegistersSafe(modbusAddr, totalRegisters);
-                MessageBox.Show($"[Debug] Read {totalRegisters} registers from {elemType}{startAddr}, received {raw?.Length ?? 0} values");
-                MessageBox.Show("RAW: " + string.Join(", ", raw));
-                if (raw != null)
+                lock (_lock)
                 {
-                    string rawStr = string.Join(", ", raw.Take(Math.Min(20, raw.Length)).Select(r => r.ToString()));
-                    Console.WriteLine($"Raw data: {rawStr}");
-                }
+                    int[] raw = ReadRegistersSafe(modbusAddr, totalRegisters);
+                 
+                    if (raw != null)
+                    {
+                        string rawStr = string.Join(", ", raw.Take(Math.Min(20, raw.Length)).Select(r => r.ToString()));
+                        Console.WriteLine($"Raw data: {rawStr}");
+                    }
 
-                return ModbusHelper.ConvertRawToValue(raw, count, dataType, stringLength);
-            }
+                    return ModbusHelper.ConvertRawToValue(raw, count, dataType, stringLength);
+                }
+            
+          
         }
         private int[] ReadRegistersSafe(ushort startAddr, int totalRegisters)
         {
@@ -441,7 +517,7 @@ namespace PLC_Inovance.Modbus
             {
                 ElemType.D => (ushort)startAddr,
                 ElemType.MW => (ushort)(1000 + startAddr),
-                //_ => throw new ArgumentException($"Unsupported ElemType: {elemType}")
+                _ => throw new ArgumentException($"Unsupported ElemType: {elemType}")
             };
         }
     }

@@ -47,9 +47,12 @@ namespace PLC_Inovance.Services
             _reconnectTimer.AutoReset = false;                    // Quan trọng: chỉ chạy 1 lần mỗi lần Start()
             _reconnectTimer.Elapsed += async (s, e) => await ReconnectTimer_ElapsedAsync();
         }
+
+       
+
         #region ===== CONNECTION =====
         // ====================== HÀM CONNECT CHÍNH (ĐÃ CẢI TIẾN) ======================
-        public async Task<bool> ConnectAsync(string ip, int port = 1502, byte unitId = 1)
+        public async Task<bool> ConnectAsync(string ip, int port = 502, byte unitId = 1)
         {
             _lastIp = ip;
             _lastPort = port;
@@ -348,7 +351,8 @@ namespace PLC_Inovance.Services
                 return _modbus.ReadWords<float>(type, startAddr, count);
             }
         }
-
+        // Ví dụ hàm đọc nhiều string
+     
         #endregion
 
         #region ===== WRITE =====
@@ -375,8 +379,28 @@ namespace PLC_Inovance.Services
 
         #endregion
 
-      
 
-  
+        public bool WriteString(ElemType type, int startAddr, string value, bool nullTerminate = true, int maxRegisters =0 )
+        {
+            if (!IsConnected) return false;
+
+            lock (_lock)
+            {
+                return _modbus.WriteString(type, startAddr, value);
+            }
+        }
+
+        public async Task<string[]> ReadMultipleStringAsync(ElemType elemType, int startAddr, int count, int charPerString = 20)
+        {
+            string[] strings = new string[count];
+            int currentAddr = startAddr;
+            int registersPerString = (charPerString + 1) / 2 ;
+            for (int i = 0; i < count; i++)
+            {
+                strings[i] = await ReadSingleAsync<string>(elemType, currentAddr, ModbusDataType.String,charPerString) ?? "";
+                currentAddr += registersPerString;   // ước lượng số register cho 1 string
+            }
+            return strings;
+        }
     }
 }

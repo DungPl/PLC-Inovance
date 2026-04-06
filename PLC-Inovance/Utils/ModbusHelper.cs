@@ -175,7 +175,7 @@ namespace PLC_Inovance.Utils
             }
             return Encoding.ASCII.GetString(bytes).TrimEnd('\0');
         }
-
+      
         private static int[] ConvertStringToRaw(string value, int maxLength)
         {
             value = (value ?? "") + "\0";
@@ -205,5 +205,7 @@ namespace PLC_Inovance.Utils
                 _ => 1
             };
         }
+
+
     }
 }

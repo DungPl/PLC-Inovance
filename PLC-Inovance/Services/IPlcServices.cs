@@ -12,17 +12,10 @@ namespace PLC_Inovance.Services
         // =============================
         // Connection
         // =============================
-        public enum PlcConnectionState
-        {
-            Disconnected,
-            Connecting,
-            Connected,
-            Reconnecting,
-            ConnectionFailed
-        }
+     
         bool IsConnected { get; }
 
-        bool Connect(string ip, int port = 1502, byte unitId = 1);
+        bool Connect(string ip, int port = 502, byte unitId = 1);
         Task<bool> ConnectAsync(string ip, int port = 1502, byte unitId = 1);
         void Disconnect();
 
@@ -48,6 +41,9 @@ namespace PLC_Inovance.Services
         short[] ReadWords(ElemType type, int startAddress, int count);
         Task<T> ReadSingleAsync<T>(ElemType elemType, int startAddr, ModbusDataType dataType, int stringLength = 0);
         Task<T[]> ReadMultipleAsync<T>(ElemType elemType, int startAddr, int count, ModbusDataType dataType, int stringLength = 0);
+
+
+        Task<string[]> ReadMultipleStringAsync(ElemType elemType, int startAddr, int count, int charPerString = 20);
         float[] ReadFloats(ElemType type, int startAddress, int count);
         // =============================
         // Write
@@ -57,7 +53,7 @@ namespace PLC_Inovance.Services
 
         bool WriteWords<T>(ElemType type, int startAddress, T[] values) where T : struct;
 
-
+        bool WriteString(ElemType type, int startAddr, string value, bool nullTerminate = true, int maxRegisters =0);
         // =============================
         // Polling Events
         // =============================
